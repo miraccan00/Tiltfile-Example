@@ -38,15 +38,27 @@ jobs:
       - name: Run go-semver
         id: semver
         run: |
+          # go-semver git commands may silently fail inside the Docker container
+          # due to safe.directory ownership mismatch in GitHub Actions runners.
+          # We use go-semver only for the semantic version bump; sha/branch come
+          # from GitHub Actions context which are always reliable.
           VERSION_JSON=$(docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             ghcr.io/miraccan00/go-semver:master)
 
-          echo "version=$(echo $VERSION_JSON     | jq -r '.MajorMinorPatch')"   >> $GITHUB_OUTPUT
-          echo "full_semver=$(echo $VERSION_JSON | jq -r '.FullSemVer')"        >> $GITHUB_OUTPUT
-          echo "short_sha=$(echo $VERSION_JSON   | jq -r '.ShortSha')"          >> $GITHUB_OUTPUT
-          echo "branch=$(echo $VERSION_JSON      | jq -r '.EscapedBranchName')" >> $GITHUB_OUTPUT
+          echo "--- go-semver raw output ---"
+          echo "$VERSION_JSON" | jq .
+
+          APP_VERSION=$(echo "$VERSION_JSON" | jq -r '.MajorMinorPatch')
+          FULL_SEMVER=$(echo "$VERSION_JSON" | jq -r '.FullSemVer')
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          BRANCH="${{ github.ref_name }}"
+
+          echo "version=$APP_VERSION"     >> $GITHUB_OUTPUT
+          echo "full_semver=$FULL_SEMVER" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA"     >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH"           >> $GITHUB_OUTPUT
 
           DIRTY=$(echo "$VERSION_JSON" | jq '.UncommittedChanges')
           if [ "$DIRTY" -gt 0 ]; then
@@ -54,14 +66,29 @@ jobs:
             exit 1
           fi
 
-      - name: Commit bumped VERSION back
+      - name: Version summary
+        run: |
+          echo "### Version resolved" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |"    >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|"            >> $GITHUB_STEP_SUMMARY
+          echo "| Version       | \`${{ steps.semver.outputs.version }}\`     |" >> $GITHUB_STEP_SUMMARY
+          echo "| Full SemVer   | \`${{ steps.semver.outputs.full_semver }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Short SHA     | \`${{ steps.semver.outputs.short_sha }}\`   |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch        | \`${{ steps.semver.outputs.branch }}\`      |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Create and push git tag
         if: github.ref == 'refs/heads/main'
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add VERSION
-          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.semver.outputs.version }} [skip ci]"
-          git push
+          TAG="v${{ steps.semver.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — no new tag needed."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created and pushed $TAG"
+          fi
 
   test:
     name: Test
