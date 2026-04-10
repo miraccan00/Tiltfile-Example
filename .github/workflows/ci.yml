@@ -41,7 +41,7 @@ jobs:
           VERSION_JSON=$(docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            ghcr.io/miraccan00/go-semver:latest)
+            ghcr.io/miraccan00/go-semver:master)
 
           echo "version=$(echo $VERSION_JSON     | jq -r '.MajorMinorPatch')"   >> $GITHUB_OUTPUT
           echo "full_semver=$(echo $VERSION_JSON | jq -r '.FullSemVer')"        >> $GITHUB_OUTPUT
