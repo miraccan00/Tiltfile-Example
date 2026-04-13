@@ -98,6 +98,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Docker registry tags must be lowercase — github.repository can contain
+      # uppercase letters (e.g. "MyOrg/My-Repo"). Normalize here.
+      - name: Set lowercase image name
+        id: meta
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "image=${IMAGE,,}" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -116,9 +124,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.short_sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ steps.meta.outputs.image }}:${{ needs.version.outputs.version }}
+            ${{ steps.meta.outputs.image }}:${{ needs.version.outputs.short_sha }}
+            ${{ steps.meta.outputs.image }}:latest
           build-args: |
             APP_VERSION=${{ needs.version.outputs.version }}
           cache-from: type=gha
